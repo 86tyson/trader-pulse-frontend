@@ -1,0 +1,142 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Trader Pulse AI — dark, premium, terminal-inspired design system.
+   All colors HSL. Use semantic tokens only in components. */
+
+@layer base {
+  :root {
+    /* Light fallback (app forces dark by default) */
+    --background: 220 20% 98%;
+    --foreground: 222 30% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 30% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 30% 10%;
+    --primary: 158 75% 40%;
+    --primary-foreground: 158 50% 98%;
+    --secondary: 220 15% 94%;
+    --secondary-foreground: 222 30% 10%;
+    --muted: 220 15% 94%;
+    --muted-foreground: 220 10% 45%;
+    --accent: 158 75% 40%;
+    --accent-foreground: 158 50% 98%;
+    --destructive: 0 75% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 15% 88%;
+    --input: 220 15% 88%;
+    --ring: 158 75% 40%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    /* Trading terminal palette */
+    --background: 222 28% 6%;
+    --foreground: 210 25% 96%;
+
+    --card: 222 25% 9%;
+    --card-foreground: 210 25% 96%;
+
+    --popover: 222 25% 9%;
+    --popover-foreground: 210 25% 96%;
+
+    /* Emerald — bullish / primary action */
+    --primary: 152 70% 48%;
+    --primary-foreground: 222 28% 6%;
+    --primary-glow: 152 90% 58%;
+
+    --secondary: 222 20% 14%;
+    --secondary-foreground: 210 25% 96%;
+
+    --muted: 222 18% 13%;
+    --muted-foreground: 215 15% 60%;
+
+    --accent: 199 90% 55%;
+    --accent-foreground: 222 28% 6%;
+
+    /* Crimson — bearish / destructive */
+    --destructive: 0 78% 58%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Amber — caution / paper mode */
+    --warning: 38 95% 55%;
+    --warning-foreground: 222 28% 6%;
+
+    /* Bull / bear semantic */
+    --bull: 152 70% 48%;
+    --bull-foreground: 222 28% 6%;
+    --bear: 0 78% 58%;
+    --bear-foreground: 0 0% 100%;
+    --neutral: 215 15% 60%;
+
+    --border: 222 20% 16%;
+    --input: 222 20% 14%;
+    --ring: 152 70% 48%;
+
+    /* Gradients */
+    --gradient-bull: linear-gradient(135deg, hsl(152 70% 48%), hsl(168 75% 45%));
+    --gradient-bear: linear-gradient(135deg, hsl(0 78% 58%), hsl(340 75% 55%));
+    --gradient-panel: linear-gradient(180deg, hsl(222 25% 10%), hsl(222 25% 8%));
+    --gradient-glow: radial-gradient(60% 80% at 50% 0%, hsl(152 70% 48% / 0.12), transparent 70%);
+
+    /* Shadows */
+    --shadow-panel: 0 1px 0 0 hsl(210 25% 96% / 0.04) inset, 0 20px 50px -20px hsl(0 0% 0% / 0.6);
+    --shadow-glow-bull: 0 0 0 1px hsl(152 70% 48% / 0.3), 0 10px 40px -10px hsl(152 70% 48% / 0.4);
+    --shadow-glow-bear: 0 0 0 1px hsl(0 78% 58% / 0.3), 0 10px 40px -10px hsl(0 78% 58% / 0.4);
+
+    --sidebar-background: 222 28% 6%;
+    --sidebar-foreground: 210 25% 96%;
+    --sidebar-primary: 152 70% 48%;
+    --sidebar-primary-foreground: 222 28% 6%;
+    --sidebar-accent: 222 20% 14%;
+    --sidebar-accent-foreground: 210 25% 96%;
+    --sidebar-border: 222 20% 16%;
+    --sidebar-ring: 152 70% 48%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "ss01", "cv11", "tnum";
+  }
+  html {
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer utilities {
+  .font-mono-tnum {
+    font-variant-numeric: tabular-nums;
+    font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace;
+  }
+  .panel {
+    background: var(--gradient-panel);
+    box-shadow: var(--shadow-panel);
+    @apply border border-border rounded-xl;
+  }
+  .glow-bull {
+    box-shadow: var(--shadow-glow-bull);
+  }
+  .glow-bear {
+    box-shadow: var(--shadow-glow-bear);
+  }
+  .stripe-warning {
+    background-image: repeating-linear-gradient(
+      45deg,
+      hsl(var(--warning) / 0.15) 0 10px,
+      transparent 10px 20px
+    );
+  }
+  .ticker-pulse {
+    animation: ticker-pulse 2s ease-in-out infinite;
+  }
+  @keyframes ticker-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+  }
+}
