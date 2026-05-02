@@ -5,6 +5,7 @@ import {
   describeError,
   getHealth,
   runScan,
+  IS_ADMIN,
   type HealthResponse,
 } from "@/lib/api";
 import type { Recommendation } from "@/lib/trading/types";
@@ -256,15 +257,17 @@ export default function App() {
           {/* Conditional banner — only when there's a problem worth surfacing. */}
           {showBanner && <BackendBanner status={healthStatus} health={health} />}
 
-          {/* SECTION: ACTIVE TRADE */}
-          <section className="space-y-4">
-            <SectionHeader label="Active Trade" />
-            <ActiveTradePanel
-              refreshKey={refreshKey}
-              onTradeClosed={triggerRefresh}
-              onClosingChange={setClosingInFlight}
-            />
-          </section>
+          {/* SECTION: ACTIVE TRADE — admin only (reads /live/positions). */}
+          {IS_ADMIN && (
+            <section className="space-y-4">
+              <SectionHeader label="Active Trade" />
+              <ActiveTradePanel
+                refreshKey={refreshKey}
+                onTradeClosed={triggerRefresh}
+                onClosingChange={setClosingInFlight}
+              />
+            </section>
+          )}
 
           {/* SECTION: STRATEGY */}
           <section className="space-y-4">
@@ -284,54 +287,64 @@ export default function App() {
               <StatsBar refreshKey={refreshKey} />
             </div>
 
-            {/* Robinhood read-only panel. */}
-            <RobinhoodPanel />
+            {/* Robinhood account / holdings — admin only (reads /live/account). */}
+            {IS_ADMIN && <RobinhoodPanel />}
 
-            {/* Scanner + recommendations. */}
-            <div className="space-y-3">
-              <MarketScanPanel
-                results={results}
-                onScan={handleScan}
-                isLoading={scanLoading}
-              />
-              {scanGeneratedAt && (
-                <p className="text-[11px] uppercase tracking-wider text-muted-foreground/70 text-right pr-1">
-                  Last scan {new Date(scanGeneratedAt).toLocaleString()}
-                </p>
-              )}
-            </div>
+            {/* Scanner + recommendations — admin only (uses /scan + /trade/approve). */}
+            {IS_ADMIN && (
+              <>
+                <div className="space-y-3">
+                  <MarketScanPanel
+                    results={results}
+                    onScan={handleScan}
+                    isLoading={scanLoading}
+                  />
+                  {scanGeneratedAt && (
+                    <p className="text-[11px] uppercase tracking-wider text-muted-foreground/70 text-right pr-1">
+                      Last scan {new Date(scanGeneratedAt).toLocaleString()}
+                    </p>
+                  )}
+                </div>
 
-            {hasRecommendation && (
-              <RecommendationPanel
-                results={results}
-                onApprove={handleApprove}
-                onDecline={handleDecline}
-              />
+                {hasRecommendation && (
+                  <RecommendationPanel
+                    results={results}
+                    onApprove={handleApprove}
+                    onDecline={handleDecline}
+                  />
+                )}
+              </>
             )}
           </section>
 
-          {/* SECTION: CONTROLS */}
+          {/* SECTION: CONTROLS — admin only. The entire section toggles trading
+              modes, places live orders, runs reconcile. None of it is safe to
+              expose on the public read-only deployment. */}
+          {IS_ADMIN && (
+            <section className="space-y-4">
+              <SectionHeader label="Controls" hint="Trading mode · risk mode · live actions · reconcile" />
+
+              {/* Trading mode (manual approval vs auto trading). Surfaces the
+                  safety hierarchy and any active warnings. */}
+              <AutoTradingPanel />
+
+              <RiskModeSelector />
+
+              {/* Live BUY panel — renders only when LIVE_TRADING_ENABLED=true and no open position. */}
+              <LivePanel onTradePlaced={triggerRefresh} />
+
+              {/* Reconcile is its own dedicated panel; visible whenever RH connected. */}
+              <ReconcilePanel onComplete={triggerRefresh} />
+            </section>
+          )}
+
+          {/* SECTION: HISTORY — TradeLog is public (uses /api/public/trades).
+              WeeklyReport hits the bearer-protected /weekly-report so it's
+              admin only. */}
           <section className="space-y-4">
-            <SectionHeader label="Controls" hint="Trading mode · risk mode · live actions · reconcile" />
-
-            {/* Trading mode (manual approval vs auto trading). Always visible —
-                surfaces the safety hierarchy and any active warnings. */}
-            <AutoTradingPanel />
-
-            <RiskModeSelector />
-
-            {/* Live BUY panel — renders only when LIVE_TRADING_ENABLED=true and no open position. */}
-            <LivePanel onTradePlaced={triggerRefresh} />
-
-            {/* Reconcile is its own dedicated panel; visible whenever RH connected. */}
-            <ReconcilePanel onComplete={triggerRefresh} />
-          </section>
-
-          {/* SECTION: HISTORY */}
-          <section className="space-y-4">
-            <SectionHeader label="History" hint="Trade log · weekly report" />
+            <SectionHeader label="History" hint={IS_ADMIN ? "Trade log · weekly report" : "Trade log"} />
             <TradeLog refreshKey={refreshKey} />
-            <WeeklyReport key={`week-${refreshKey}`} />
+            {IS_ADMIN && <WeeklyReport key={`week-${refreshKey}`} />}
           </section>
 
           <footer className="pt-8 text-[10px] uppercase tracking-[0.18em] text-muted-foreground/60 text-center">
@@ -340,9 +353,8 @@ export default function App() {
         </div>
       </div>
 
-      {/* Floating Account Assistant — read-only chat bubble. Renders at the
-          App root so it stays anchored to the viewport regardless of scroll. */}
-      <ChatBubble />
+      {/* Floating Account Assistant — admin only (calls bearer-protected /ai/*). */}
+      {IS_ADMIN && <ChatBubble />}
     </div>
   );
 }

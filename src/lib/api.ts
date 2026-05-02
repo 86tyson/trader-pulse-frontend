@@ -29,6 +29,25 @@ const BASE =
     : "http://localhost:3001");
 const API_KEY = import.meta.env.VITE_BACKEND_API_KEY ?? "";
 
+// IS_ADMIN gates the live-trading UI. Set VITE_IS_ADMIN=true ONLY on the
+// admin Vercel project (admin.traderpulseai.com), which is gated by Vercel
+// Authentication so unauthorized visitors never even download the bundle.
+//
+//   - Public deployment (www.traderpulseai.com): VITE_IS_ADMIN unset →
+//     IS_ADMIN=false → live-trading panels are not rendered → bundle has no
+//     auth token to leak.
+//   - Admin deployment (admin.traderpulseai.com): VITE_IS_ADMIN=true and
+//     VITE_BACKEND_API_KEY=<value> → IS_ADMIN=true → live UI renders →
+//     bearer header sent → /live/* endpoints work.
+//   - Local dev: .env.local sets both → IS_ADMIN=true → full UI as before.
+//
+// Defense in depth: the bearer-attach is gated separately on API_KEY
+// presence (not on IS_ADMIN). Even if a misconfigured admin build somehow
+// has VITE_IS_ADMIN=true but no key, the UI renders but every live call
+// returns 401 — visible failure beats silent bypass.
+export const IS_ADMIN =
+  import.meta.env.VITE_IS_ADMIN === "true" || (import.meta.env.DEV && !!API_KEY);
+
 // Stable error codes the backend can emit (plus our synthetic BACKEND_OFFLINE for fetch failures).
 export type ApiErrorCode =
   | "BACKEND_OFFLINE"
