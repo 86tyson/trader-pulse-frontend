@@ -8,6 +8,8 @@ import {
   IS_ADMIN,
   type HealthResponse,
 } from "@/lib/api";
+import AdminLoginGate, { useAdminAuth } from "@/components/AdminLoginGate";
+import { LogOut } from "lucide-react";
 import type { Recommendation } from "@/lib/trading/types";
 import type { ScanResult } from "@/lib/trading/strategy";
 
@@ -61,6 +63,19 @@ function SectionHeader({
 }
 
 export default function App() {
+  // Admin builds: wrap the whole dashboard in a session-cookie gate. Public
+  // builds skip the gate entirely (and never see live-trading panels).
+  if (IS_ADMIN) {
+    return (
+      <AdminLoginGate>
+        <Dashboard />
+      </AdminLoginGate>
+    );
+  }
+  return <Dashboard />;
+}
+
+function Dashboard() {
   const [healthStatus, setHealthStatus] = useState<HealthStatus>("checking");
   const [health, setHealth] = useState<HealthResponse | null>(null);
 
@@ -248,6 +263,7 @@ export default function App() {
                   Paper
                 </StatusBadge>
               )}
+              {IS_ADMIN && <AdminLogoutButton />}
             </div>
           </header>
 
@@ -423,4 +439,27 @@ function BackendBanner({
   }
 
   return null;
+}
+
+// Small icon button — visible only in admin builds. Calls /admin/logout
+// (which clears the HttpOnly cookie at the server) and bounces back to
+// the login form via the AdminLoginGate context.
+function AdminLogoutButton() {
+  const { logout } = useAdminAuth();
+  return (
+    <button
+      onClick={() => {
+        // Fire and forget; useAdminLogout in the gate handles errors.
+        // We trigger the local "needs-login" state via the context callback.
+        import("@/lib/api").then((api) => {
+          void api.adminLogout().finally(() => logout());
+        });
+      }}
+      title="Sign out of admin"
+      aria-label="Sign out"
+      className="ml-1 inline-flex items-center justify-center h-7 w-7 rounded-md border border-border/60 text-muted-foreground hover:text-foreground hover:border-border transition"
+    >
+      <LogOut className="h-3.5 w-3.5" />
+    </button>
+  );
 }

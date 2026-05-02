@@ -27,26 +27,19 @@ const BASE =
   (import.meta.env.PROD
     ? "https://web-production-27b6e.up.railway.app"
     : "http://localhost:3001");
-const API_KEY = import.meta.env.VITE_BACKEND_API_KEY ?? "";
 
-// IS_ADMIN gates the live-trading UI. Set VITE_IS_ADMIN=true ONLY on the
-// admin Vercel project (admin.traderpulseai.com), which is gated by Vercel
-// Authentication so unauthorized visitors never even download the bundle.
+// IS_ADMIN gates the live-trading UI rendering. Set VITE_IS_ADMIN=true ONLY
+// on the admin Vercel project; unset (or "false") on the public project.
 //
-//   - Public deployment (www.traderpulseai.com): VITE_IS_ADMIN unset →
-//     IS_ADMIN=false → live-trading panels are not rendered → bundle has no
-//     auth token to leak.
-//   - Admin deployment (admin.traderpulseai.com): VITE_IS_ADMIN=true and
-//     VITE_BACKEND_API_KEY=<value> → IS_ADMIN=true → live UI renders →
-//     bearer header sent → /live/* endpoints work.
-//   - Local dev: .env.local sets both → IS_ADMIN=true → full UI as before.
+// Critical: this flag is purely a UI hint. It does NOT grant access — the
+// backend enforces auth independently via /admin/* session cookies. A user
+// who somehow loads the admin bundle still cannot call /live/* without
+// first POSTing a correct password to /admin/login. The cookie is HttpOnly
+// (no JS access) and sent only via `credentials: 'include'` on fetch.
 //
-// Defense in depth: the bearer-attach is gated separately on API_KEY
-// presence (not on IS_ADMIN). Even if a misconfigured admin build somehow
-// has VITE_IS_ADMIN=true but no key, the UI renders but every live call
-// returns 401 — visible failure beats silent bypass.
-export const IS_ADMIN =
-  import.meta.env.VITE_IS_ADMIN === "true" || (import.meta.env.DEV && !!API_KEY);
+// THERE IS NO STATIC API KEY IN THE FRONTEND. VITE_BACKEND_API_KEY is no
+// longer read or referenced anywhere. The bundle ships secret-free.
+export const IS_ADMIN = import.meta.env.VITE_IS_ADMIN === "true";
 
 // Stable error codes the backend can emit (plus our synthetic BACKEND_OFFLINE for fetch failures).
 export type ApiErrorCode =
@@ -102,17 +95,21 @@ type RequestOpts = RequestInit;
 
 async function request<T = unknown>(path: string, opts: RequestOpts = {}): Promise<T> {
   const headers = new Headers(opts.headers);
-  // Attach Authorization ONLY when VITE_BACKEND_API_KEY is set in the
-  // current build. Public deploys leave it unset → no header sent →
-  // /api/public/* still works. Local dev sets it in .env.local → header
-  // sent → /live/*, /trade/*, /ai/*, /scan all work against the local
-  // backend.
-  if (API_KEY) headers.set("Authorization", `Bearer ${API_KEY}`);
   if (opts.body) headers.set("Content-Type", "application/json");
 
   let res: Response;
   try {
-    res = await fetch(`${BASE}${path}`, { ...opts, headers });
+    // credentials: 'include' tells the browser to attach the tpai_admin
+    // session cookie on cross-site requests (admin.traderpulseai.com →
+    // Railway). The backend's CORS is configured with credentials:true
+    // and a non-wildcard Access-Control-Allow-Origin, both required for
+    // this to work. Public endpoints (/api/public/*, /admin/me) ignore
+    // the cookie if it's missing or invalid — they always return 200.
+    res = await fetch(`${BASE}${path}`, {
+      ...opts,
+      headers,
+      credentials: "include",
+    });
   } catch {
     // network / DNS / CORS failures all collapse here
     throw new ApiError(
@@ -864,4 +861,42 @@ export function describeError(e: unknown): { title: string; detail: string } {
     }
   }
   return { title: "Error", detail: e instanceof Error ? e.message : "Unknown error" };
+}
+
+// =============================================================================
+// Admin session auth (cookie-based, no static secret in this bundle).
+//
+// Flow:
+//   - getAdminMe()  → GET /admin/me. Always returns 200. Reports whether the
+//                     current request carries a valid tpai_admin cookie.
+//   - adminLogin(p) → POST /admin/login { password }. Server sets HttpOnly
+//                     cookie on success; subsequent requests with
+//                     credentials:'include' carry it automatically.
+//   - adminLogout() → POST /admin/logout. Server clears the cookie.
+//
+// The password is sent in the request body, never persisted on this side.
+// The session cookie itself is HttpOnly so JS cannot read it; we only know
+// "I'm authenticated" by the response from /admin/me.
+// =============================================================================
+
+export interface AdminMeResponse {
+  ok: true;
+  authenticated: boolean;
+  expiresAt?: string;
+  issuedAt?: string;
+}
+
+export function getAdminMe(): Promise<AdminMeResponse> {
+  return request<AdminMeResponse>("/admin/me");
+}
+
+export function adminLogin(password: string): Promise<{ ok: true; authenticated: true }> {
+  return request<{ ok: true; authenticated: true }>("/admin/login", {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  });
+}
+
+export function adminLogout(): Promise<{ ok: true }> {
+  return request<{ ok: true }>("/admin/logout", { method: "POST" });
 }
