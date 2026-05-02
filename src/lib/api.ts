@@ -2,13 +2,32 @@ import type { Confidence, MarketSnapshot, Recommendation } from "@/lib/trading/t
 import type { ScanResult } from "@/lib/trading/strategy";
 
 // Backend base URL. In production this points at the Railway deployment;
-// in local dev override via .env to point at the local backend.
+// in local dev override via .env.local to point at the local backend.
 //
-// PUBLIC-ONLY DEPLOYMENT: this frontend talks ONLY to the read-only public
-// endpoints exposed by the backend (`/api/public/status`,
-// `/api/public/performance`, `/api/public/trades`). No Authorization or
-// x-api-key header is sent by any function in this module.
-const BASE = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:3001";
+// FALLBACK SAFETY:
+//   - In a production build, if VITE_BACKEND_URL is somehow unset (e.g. a
+//     Vercel env-var misconfiguration), we fall back to the Railway URL —
+//     NEVER to localhost. A localhost fallback in production would silently
+//     send every request to the user's machine, which would just fail.
+//   - In a dev build, fall back to localhost:3001 so `npm run dev` works
+//     without any env file.
+//
+// AUTH POLICY:
+//   - When VITE_BACKEND_API_KEY is UNSET (production / Railway public deploy):
+//     no Authorization header is sent. The frontend talks ONLY to public
+//     endpoints (/api/public/status, /api/public/performance,
+//     /api/public/trades). Auth-protected endpoints return 401, which the
+//     UI handles gracefully (live-trading panels render as read-only /
+//     "unavailable" instead of crashing).
+//   - When VITE_BACKEND_API_KEY is SET (local dev with full backend):
+//     Authorization: Bearer <key> is attached to every request, enabling
+//     live trading, AI chat, scanner, etc. against the local backend.
+const BASE =
+  import.meta.env.VITE_BACKEND_URL ??
+  (import.meta.env.PROD
+    ? "https://web-production-27b6e.up.railway.app"
+    : "http://localhost:3001");
+const API_KEY = import.meta.env.VITE_BACKEND_API_KEY ?? "";
 
 // Stable error codes the backend can emit (plus our synthetic BACKEND_OFFLINE for fetch failures).
 export type ApiErrorCode =
@@ -64,10 +83,12 @@ type RequestOpts = RequestInit;
 
 async function request<T = unknown>(path: string, opts: RequestOpts = {}): Promise<T> {
   const headers = new Headers(opts.headers);
-  // No Authorization / x-api-key header is ever attached. The frontend
-  // calls public endpoints only. Auth-protected endpoints (live trading,
-  // AI chat, scan, approve/decline) will return 401 in production — that
-  // is intentional and expected.
+  // Attach Authorization ONLY when VITE_BACKEND_API_KEY is set in the
+  // current build. Public deploys leave it unset → no header sent →
+  // /api/public/* still works. Local dev sets it in .env.local → header
+  // sent → /live/*, /trade/*, /ai/*, /scan all work against the local
+  // backend.
+  if (API_KEY) headers.set("Authorization", `Bearer ${API_KEY}`);
   if (opts.body) headers.set("Content-Type", "application/json");
 
   let res: Response;
@@ -99,6 +120,13 @@ async function request<T = unknown>(path: string, opts: RequestOpts = {}): Promi
 // synthesizing missing fields with safe defaults so no UI breaks.
 // =============================================================================
 
+// PublicStatusResponse covers BOTH backend shapes:
+//   - Railway public deploy: minimal flag-only payload.
+//   - Local backend (/api/public/status here): richer payload including
+//     robinhoodConnected, caps, today.* — so the local frontend can decide
+//     whether to render the live-trading UI.
+// All non-flag fields are optional; the adapters below fall back to safe
+// defaults when a field is missing.
 interface PublicStatusResponse {
   ok: true;
   paperMode: boolean;
@@ -106,8 +134,19 @@ interface PublicStatusResponse {
   liveTradingEnabled: boolean;
   autoTradingEnabled: boolean;
   manualApprovalRequired: boolean;
+  requireApproval?: boolean;
+  robinhoodConnected?: boolean;
   allowedSymbols: string[];
   liveAllowedSymbols?: string[];
+  caps?: {
+    maxOrderUsd?: number;
+    dailyLossCapUsd?: number;
+    allowedSymbols?: string[];
+  };
+  today?: {
+    openLivePositions?: number;
+    liveRealizedLossUsd?: number;
+  };
   timestamp: string;
 }
 
@@ -434,10 +473,10 @@ export interface LiveApproveSuccess {
   };
 }
 
-// Backed by /api/public/status. Fields not exposed publicly
-// (`robinhoodConnected`, `caps`, `today.*`) are filled with safe defaults.
-// Components that gate on `robinhoodConnected` (LivePanel, RobinhoodPanel,
-// ActiveTradePanel, ReconcilePanel) will hide themselves cleanly.
+// Backed by /api/public/status. Reads any rich fields the backend chooses
+// to expose (robinhoodConnected, caps, today.*) and falls back to safe
+// defaults when they're absent. Local backend exposes the rich shape;
+// Railway public deploy exposes a minimal flag-only shape — both work.
 export async function getLiveStatus(): Promise<LiveStatusResponse> {
   const s = await fetchPublicStatus();
   return {
@@ -446,17 +485,18 @@ export async function getLiveStatus(): Promise<LiveStatusResponse> {
     autoTradingEnabled: s.autoTradingEnabled,
     botEnabled: s.botEnabled,
     paperMode: s.paperMode,
-    requireApproval: true,
+    requireApproval: s.requireApproval ?? true,
     manualApprovalRequired: s.manualApprovalRequired,
-    robinhoodConnected: false,
+    robinhoodConnected: s.robinhoodConnected ?? false,
     caps: {
-      maxOrderUsd: 0,
-      dailyLossCapUsd: 0,
-      allowedSymbols: s.liveAllowedSymbols ?? [],
+      maxOrderUsd: s.caps?.maxOrderUsd ?? 0,
+      dailyLossCapUsd: s.caps?.dailyLossCapUsd ?? 0,
+      allowedSymbols:
+        s.caps?.allowedSymbols ?? s.liveAllowedSymbols ?? [],
     },
     today: {
-      liveRealizedLossUsd: 0,
-      openLivePositions: 0,
+      liveRealizedLossUsd: s.today?.liveRealizedLossUsd ?? 0,
+      openLivePositions: s.today?.openLivePositions ?? 0,
     },
   };
 }
