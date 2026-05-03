@@ -4,11 +4,23 @@ import { StatusBadge } from "@/components/panel/StatusBadge";
 import {
   getTradingMode,
   setTradingMode,
+  getBotLoopStatus,
   describeError,
   type TradingMode,
   type TradingModeStatus,
+  type BotLoopStatus,
 } from "@/lib/api";
-import { ShieldCheck, Zap, Pause, Lock, AlertTriangle, Loader2 } from "lucide-react";
+import {
+  ShieldCheck,
+  Zap,
+  Pause,
+  Lock,
+  AlertTriangle,
+  Loader2,
+  Clock,
+  CheckCircle2,
+  XCircle,
+} from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { pushAlertFromError } from "@/lib/alertCenter";
 
@@ -119,13 +131,19 @@ function ModeCard({ mode, current, locked, busy, onSelect }: ModeCardProps) {
 
 export default function AutoTradingPanel() {
   const [status, setStatus] = useState<TradingModeStatus | null>(null);
+  const [botLoop, setBotLoop] = useState<BotLoopStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const s = await getTradingMode();
+      // Fetch both in parallel; mode is required, bot-loop is best-effort.
+      const [s, bl] = await Promise.all([
+        getTradingMode(),
+        getBotLoopStatus().catch(() => null),
+      ]);
       setStatus(s);
+      setBotLoop(bl);
       setError(null);
     } catch (e) {
       setError(describeError(e).detail);
@@ -300,6 +318,9 @@ export default function AutoTradingPanel() {
         </div>
       )}
 
+      {/* Bot loop status — read-only. Loop is env-gated; UI cannot toggle. */}
+      {botLoop && <BotLoopStatusBlock status={botLoop} />}
+
       <div className="mt-4 text-xs text-muted-foreground/85 leading-relaxed border-t border-border/60 pt-3">
         <p>
           <span className="font-semibold text-foreground/85">Env-level ceilings</span>{" "}
@@ -309,6 +330,111 @@ export default function AutoTradingPanel() {
         </p>
       </div>
     </Panel>
+  );
+}
+
+function BotLoopStatusBlock({ status }: { status: BotLoopStatus }) {
+  // Three displayable states for the operator:
+  //   1. Loop disabled by env (intervalMin=0 OR running=false because BOT_LOOP_INTERVAL_MIN=0)
+  //   2. Loop running but currently gated off (e.g. mode=paused, or BOT_ENABLED=false)
+  //   3. Loop running and ticking
+  const { running, intervalMin, lastTick, gates, wouldRunIfTicked } = status;
+
+  let label: string;
+  let tone: "muted" | "warning" | "bull";
+  let Icon: typeof Clock;
+  let detail: string;
+
+  if (!running) {
+    label = "Bot Loop: DISABLED";
+    tone = "muted";
+    Icon = Lock;
+    detail =
+      "Set BOT_LOOP_INTERVAL_MIN > 0 on Railway and redeploy to enable scheduled scans.";
+  } else if (!gates.botEnabled) {
+    label = "Bot Loop: GATED";
+    tone = "muted";
+    Icon = Lock;
+    detail = "BOT_ENABLED=false on the backend. The interval is scheduled but every tick is skipped.";
+  } else if (!gates.liveTradingEnabled) {
+    label = "Bot Loop: GATED";
+    tone = "muted";
+    Icon = Lock;
+    detail = "LIVE_TRADING_ENABLED=false on the backend. Every tick is skipped.";
+  } else if (!gates.tradingModeOk) {
+    label = "Bot Loop: PAUSED";
+    tone = "muted";
+    Icon = Pause;
+    detail = `Trading mode is '${gates.tradingMode}'. Loop only runs in 'assisted'.`;
+  } else if (wouldRunIfTicked) {
+    label = "Bot Loop: ACTIVE";
+    tone = "warning";
+    Icon = Clock;
+    detail = `Scanning every ${intervalMin}m. Each tick may queue recommendations for your approval — never places orders.`;
+  } else {
+    label = "Bot Loop: IDLE";
+    tone = "muted";
+    Icon = Clock;
+    detail = "Scheduled but inactive.";
+  }
+
+  const lastTickLine = (() => {
+    if (!lastTick) return "No ticks yet.";
+    const when = new Date(lastTick.finishedAt).toLocaleTimeString();
+    if (lastTick.status === "ok") {
+      return `Last tick at ${when} — queued ${lastTick.queued ?? 0} recommendation${
+        lastTick.queued === 1 ? "" : "s"
+      } (found ${lastTick.recommendationsFound ?? 0}).`;
+    }
+    if (lastTick.status === "skipped") {
+      return `Last tick at ${when} skipped — ${lastTick.reason || "unknown reason"}.`;
+    }
+    return `Last tick at ${when} ERRORED — ${lastTick.error || "unknown error"}.`;
+  })();
+
+  const surfaceClass =
+    tone === "warning"
+      ? "border-warning/40 bg-warning/5"
+      : tone === "bull"
+      ? "border-bull/30 bg-bull/5"
+      : "border-border bg-card/40";
+  const iconBgClass =
+    tone === "warning"
+      ? "bg-warning/15 border-warning/40 text-warning"
+      : tone === "bull"
+      ? "bg-bull/15 border-bull/40 text-bull"
+      : "bg-muted/40 border-border text-muted-foreground";
+
+  const LastIcon =
+    lastTick?.status === "ok"
+      ? CheckCircle2
+      : lastTick?.status === "error"
+      ? XCircle
+      : Clock;
+
+  return (
+    <div className={`mt-4 rounded-xl border p-4 ${surfaceClass}`}>
+      <div className="flex items-start gap-3">
+        <div className={`shrink-0 h-9 w-9 rounded-lg border flex items-center justify-center ${iconBgClass}`}>
+          <Icon className="h-4 w-4" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-semibold">{label}</span>
+            {running && (
+              <StatusBadge tone={tone === "warning" ? "warning" : "muted"}>
+                {intervalMin}m
+              </StatusBadge>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{detail}</p>
+          <p className="mt-2 text-[11px] text-muted-foreground/80 leading-relaxed flex items-center gap-1.5">
+            <LastIcon className="h-3 w-3 shrink-0" />
+            {lastTickLine}
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }
 

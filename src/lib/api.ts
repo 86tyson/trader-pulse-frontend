@@ -954,6 +954,41 @@ export function getModeChangeLog(limit = 20): Promise<{ ok: true; changes: ModeC
 }
 
 // =============================================================================
+// Bot loop (Phase 4) — scheduled scanner that queues recommendations while
+// in Assisted mode. Read-only status; the loop is started/stopped purely by
+// env (BOT_ENABLED + BOT_LOOP_INTERVAL_MIN). The UI cannot toggle it on.
+// =============================================================================
+
+export interface BotLoopStatus {
+  ok: true;
+  running: boolean;
+  intervalMin: number;
+  tickInFlight: boolean;
+  lastTick:
+    | null
+    | {
+        startedAt: string;
+        finishedAt: string;
+        status: "ok" | "skipped" | "error";
+        reason?: string;
+        queued?: number;
+        recommendationsFound?: number;
+        error?: string;
+      };
+  gates: {
+    botEnabled: boolean;
+    liveTradingEnabled: boolean;
+    tradingMode: TradingMode;
+    tradingModeOk: boolean;
+  };
+  wouldRunIfTicked: boolean;
+}
+
+export function getBotLoopStatus(): Promise<BotLoopStatus> {
+  return request<BotLoopStatus>("/admin/bot-loop");
+}
+
+// =============================================================================
 // Pending recommendations queue (assisted mode)
 // =============================================================================
 
