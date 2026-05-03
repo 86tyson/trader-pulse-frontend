@@ -1,21 +1,31 @@
 import { useEffect, useState } from "react";
 
 // Strategy Risk Mode — UI-only preference, persisted in localStorage.
-// Default: "standard". Backend uses it ONLY for paper-mode simulation.
-// Live trading is unaffected by this setting (the live route's strict
-// schema rejects any `riskMode` field).
+// Default: "standard". Backend uses it ONLY for paper-mode simulation
+// sizing — it has no effect on live trading.
+//
+// 'soloway_playbook' is a SEPARATE concept that's persisted SERVER-side
+// in `system_settings` and read by the bot loop / scanner to switch
+// strategies. The selector UI presents all four as a single choice for
+// the operator; under the hood, picking Soloway pushes the strategyMode
+// to the backend AND sets the local riskMode to 'standard' (since
+// Soloway carries its own sizing rules and doesn't use the paper-sizing
+// preference). See src/components/RiskModeSelector.tsx for the wiring.
 
-export type RiskMode = "conservative" | "standard" | "aggressive";
+export type RiskMode = "conservative" | "standard" | "aggressive" | "soloway_playbook";
 
 const STORAGE_KEY = "strategy.riskMode";
 const DEFAULT_MODE: RiskMode = "standard";
+const VALID: RiskMode[] = ["conservative", "standard", "aggressive", "soloway_playbook"];
+
+function isValid(v: unknown): v is RiskMode {
+  return typeof v === "string" && (VALID as string[]).includes(v);
+}
 
 function readFromStorage(): RiskMode {
   try {
     const v = localStorage.getItem(STORAGE_KEY);
-    if (v === "conservative" || v === "standard" || v === "aggressive") {
-      return v;
-    }
+    if (isValid(v)) return v;
   } catch {
     /* SSR / private mode — fall through */
   }
@@ -37,14 +47,12 @@ export function useRiskMode(): {
   }, [mode]);
 
   // Cross-tab sync: if the user changes the mode in another tab/window, this
-  // tab picks it up too. Optional but nice.
+  // tab picks it up too.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key !== STORAGE_KEY) return;
       const v = e.newValue;
-      if (v === "conservative" || v === "standard" || v === "aggressive") {
-        setModeState(v);
-      }
+      if (isValid(v)) setModeState(v);
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
@@ -53,7 +61,7 @@ export function useRiskMode(): {
   return { mode, setMode: setModeState };
 }
 
-// Static metadata for the three modes. Single source of truth for UI labels.
+// Static metadata for each mode. Single source of truth for UI labels.
 export const RISK_MODE_META: Record<
   RiskMode,
   { label: string; sizeLabel: string; freqLabel: string; description: string }
@@ -78,5 +86,12 @@ export const RISK_MODE_META: Record<
     freqLabel: "HIGH + MEDIUM + LOW",
     description:
       "Double the simulated trade size (capped at MAX_TRADE_USD); accepts LOW-confidence setups (lowers minConfidence to 0.4). More trades, larger bets.",
+  },
+  soloway_playbook: {
+    label: "Soloway Playbook",
+    sizeLabel: "Confluence-only",
+    freqLabel: "Strict, ≥2:1 R:R",
+    description:
+      "Technical-only strategy using confluence support, RSI, ATR, and hard blocks. Waits for high-confluence technical setups. No forced trades. ETH-USD live; BTC-USD watchlist only. No weekend entries.",
   },
 };

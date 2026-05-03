@@ -954,6 +954,34 @@ export function getModeChangeLog(limit = 20): Promise<{ ok: true; changes: ModeC
 }
 
 // =============================================================================
+// Strategy mode (which strategy the bot loop's scanner runs)
+// Distinct from the per-trade `riskMode` (paper sizing preference). Stored
+// server-side in system_settings and audit-logged on change.
+// =============================================================================
+
+export type StrategyMode = "default" | "soloway_playbook";
+
+export interface StrategyModeStatus {
+  ok: true;
+  mode: StrategyMode;
+  updatedAt: string | null;
+  availableModes: StrategyMode[];
+  descriptions: Record<StrategyMode, string>;
+  unchanged?: boolean;
+}
+
+export function getStrategyMode(): Promise<StrategyModeStatus> {
+  return request<StrategyModeStatus>("/admin/strategy-mode");
+}
+
+export function setStrategyMode(mode: StrategyMode, reason?: string): Promise<StrategyModeStatus> {
+  return request<StrategyModeStatus>("/admin/strategy-mode", {
+    method: "POST",
+    body: JSON.stringify({ mode, reason: reason ?? null }),
+  });
+}
+
+// =============================================================================
 // Bot loop (Phase 4) — scheduled scanner that queues recommendations while
 // in Assisted mode. Read-only status; the loop is started/stopped purely by
 // env (BOT_ENABLED + BOT_LOOP_INTERVAL_MIN). The UI cannot toggle it on.

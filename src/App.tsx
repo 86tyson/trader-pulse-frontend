@@ -250,10 +250,24 @@ function Dashboard() {
                   in the Controls section, so on mobile we keep the header
                   uncluttered. */}
               <StatusBadge
-                tone={riskMode === "aggressive" ? "bear" : riskMode === "conservative" ? "bull" : "muted"}
+                tone={
+                  riskMode === "aggressive"
+                    ? "bear"
+                    : riskMode === "conservative"
+                    ? "bull"
+                    : riskMode === "soloway_playbook"
+                    ? "accent"
+                    : "muted"
+                }
                 className="hidden sm:inline-flex"
               >
-                {riskMode === "aggressive" ? "Aggressive" : riskMode === "conservative" ? "Conservative" : "Standard"}
+                {riskMode === "aggressive"
+                  ? "Aggressive"
+                  : riskMode === "conservative"
+                  ? "Conservative"
+                  : riskMode === "soloway_playbook"
+                  ? "Soloway"
+                  : "Standard"}
               </StatusBadge>
               {health?.liveTradingEnabled ? (
                 <StatusBadge tone="bear" pulse>
