@@ -9,6 +9,7 @@ import {
   type HealthResponse,
 } from "@/lib/api";
 import AdminLoginGate, { useAdminAuth } from "@/components/AdminLoginGate";
+import PendingRecommendations from "@/components/PendingRecommendations";
 import { LogOut } from "lucide-react";
 import type { Recommendation } from "@/lib/trading/types";
 import type { ScanResult } from "@/lib/trading/strategy";
@@ -333,6 +334,19 @@ function Dashboard() {
             )}
           </section>
 
+          {/* SECTION: PENDING APPROVALS — admin only. Bot-proposed live trades
+              waiting for an explicit click. Populated by /scan when
+              tradingMode='assisted'. */}
+          {IS_ADMIN && (
+            <section className="space-y-4">
+              <SectionHeader label="Pending Approvals" hint="Bot-proposed · requires manual click" />
+              <PendingRecommendations
+                refreshKey={refreshKey}
+                onResolved={triggerRefresh}
+              />
+            </section>
+          )}
+
           {/* SECTION: CONTROLS — admin only. The entire section toggles trading
               modes, places live orders, runs reconcile. None of it is safe to
               expose on the public read-only deployment. */}
@@ -340,8 +354,7 @@ function Dashboard() {
             <section className="space-y-4">
               <SectionHeader label="Controls" hint="Trading mode · risk mode · live actions · reconcile" />
 
-              {/* Trading mode (manual approval vs auto trading). Surfaces the
-                  safety hierarchy and any active warnings. */}
+              {/* Trading mode (paused / assisted / auto). Backed by /admin/mode. */}
               <AutoTradingPanel />
 
               <RiskModeSelector />

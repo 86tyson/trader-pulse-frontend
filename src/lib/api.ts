@@ -76,7 +76,11 @@ export type ApiErrorCode =
   | "SELL_FAILED"
   | "SELL_CANCELLED"
   | "SELL_TIMEOUT"
-  | "SELL_PARTIAL";
+  | "SELL_PARTIAL"
+  // Phase 5 — daily trade count cap, Phase 1/3 — admin runtime mode
+  | "DAILY_TRADE_COUNT_CAP_HIT"
+  | "INVALID_MODE"
+  | "CONFLICT";
 
 export class ApiError extends Error {
   code: ApiErrorCode;
@@ -899,4 +903,107 @@ export function adminLogin(password: string): Promise<{ ok: true; authenticated:
 
 export function adminLogout(): Promise<{ ok: true }> {
   return request<{ ok: true }>("/admin/logout", { method: "POST" });
+}
+
+// =============================================================================
+// Admin trading mode (paused / assisted / auto)
+// =============================================================================
+
+export type TradingMode = "paused" | "assisted" | "auto";
+
+export interface TradingModeStatus {
+  ok: true;
+  mode: TradingMode;
+  updatedAt: string | null;
+  ceilings: {
+    liveTradingEnabled: boolean;
+    autoTradingEnabled: boolean;
+    botEnabled: boolean;
+    requireApproval: boolean;
+    robinhoodConnected: boolean;
+  };
+  availableModes: TradingMode[];
+  lockedModes: Partial<Record<TradingMode, string>>;
+  unchanged?: boolean;
+}
+
+export function getTradingMode(): Promise<TradingModeStatus> {
+  return request<TradingModeStatus>("/admin/mode");
+}
+
+export function setTradingMode(
+  mode: TradingMode,
+  reason?: string,
+): Promise<TradingModeStatus> {
+  return request<TradingModeStatus>("/admin/mode", {
+    method: "POST",
+    body: JSON.stringify({ mode, reason: reason ?? null }),
+  });
+}
+
+export interface ModeChangeLogEntry {
+  fromMode: TradingMode | null;
+  toMode: TradingMode;
+  actor: string;
+  reason: string | null;
+  createdAt: string;
+}
+
+export function getModeChangeLog(limit = 20): Promise<{ ok: true; changes: ModeChangeLogEntry[] }> {
+  return request(`/admin/mode/log?limit=${limit}`);
+}
+
+// =============================================================================
+// Pending recommendations queue (assisted mode)
+// =============================================================================
+
+export interface PendingRecommendation {
+  id: number;
+  recommendationId: string;
+  symbol: string;
+  side: "buy" | "sell";
+  suggestedAmountUsd: number;
+  confidenceScore: number;
+  entryReason: string | null;
+  stopLoss: number | null;
+  profitTarget: number | null;
+  invalidationLevel: number | null;
+  riskReward: number | null;
+  status: "pending_approval";
+  mode: "live";
+  proposedAt: string;
+  createdAt: string;
+  raw: Record<string, unknown> | null;
+}
+
+export function getPendingRecommendations(
+  limit = 50,
+): Promise<{ ok: true; recommendations: PendingRecommendation[] }> {
+  return request(`/admin/recommendations?limit=${limit}`);
+}
+
+export function declinePendingRecommendation(
+  id: number,
+  reason?: string,
+): Promise<{ ok: true; id: number; status: "rejected" }> {
+  return request(`/admin/recommendations/${id}/decline`, {
+    method: "POST",
+    body: JSON.stringify({ reason: reason ?? null }),
+  });
+}
+
+export interface ApproveResult {
+  ok: true;
+  id: number;
+  status: "executed";
+  robinhoodOrderId: string | null;
+  refPrice: number;
+  cryptoQty: number;
+}
+
+export function approvePendingRecommendation(id: number): Promise<ApproveResult> {
+  return request<ApproveResult>(`/admin/recommendations/${id}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ confirmedRealMoney: true }),
+  });
 }
