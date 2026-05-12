@@ -67,7 +67,9 @@ const MODE_META: Record<TradingMode, {
   },
   auto: {
     title: "Full Auto",
-    blurb: "Bot places orders automatically without manual approval. Locked until implemented.",
+    blurb:
+      "Bot places real Robinhood orders automatically — no manual approval per trade. " +
+      "Caps + safety gates still apply. Requires Place-orders permission on the RH credential.",
     Icon: Zap,
     toneActive: "bear",
   },
@@ -389,12 +391,15 @@ function BotLoopStatusBlock({ status }: { status: BotLoopStatus }) {
     label = "Bot Loop: PAUSED";
     tone = "muted";
     Icon = Pause;
-    detail = `Trading mode is '${gates.tradingMode}'. Loop only runs in 'assisted'.`;
+    detail = `Trading mode is '${gates.tradingMode}'. Loop runs in 'assisted' or 'auto'.`;
   } else if (wouldRunIfTicked) {
-    label = "Bot Loop: ACTIVE";
-    tone = "warning";
+    const isAuto = gates.tradingMode === "auto";
+    label = isAuto ? "Bot Loop: AUTO-EXECUTING" : "Bot Loop: ACTIVE";
+    tone = isAuto ? "bear" : "warning";
     Icon = Clock;
-    detail = `Scanning every ${intervalMin}m. Each tick may queue recommendations for your approval — never places orders.`;
+    detail = isAuto
+      ? `Scanning every ${intervalMin}m. Each passing setup is placed at Robinhood automatically — no manual approval.`
+      : `Scanning every ${intervalMin}m. Each tick may queue recommendations for your approval — never places orders.`;
   } else {
     label = "Bot Loop: IDLE";
     tone = "muted";
