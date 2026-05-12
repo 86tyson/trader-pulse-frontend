@@ -285,6 +285,11 @@ function Dashboard() {
           {/* AlertCenter — visible only when there are pending alerts. */}
           <AlertCenter />
 
+          {/* AUTO MODE BANNER — visible whenever the bot is auto-executing.
+              Cannot be missed; cannot be dismissed. The only way to clear
+              it is to switch tradingMode back to assisted or paused. */}
+          {IS_ADMIN && <AutoModeBanner />}
+
           {/* Conditional banner — only when there's a problem worth surfacing. */}
           {showBanner && <BackendBanner status={healthStatus} health={health} />}
 
@@ -466,6 +471,51 @@ function BackendBanner({
   }
 
   return null;
+}
+
+// AutoModeBanner — large, undismissable red bar that renders only when
+// tradingMode === 'auto' on the server. Polls /admin/mode every 60s so
+// switching off via UI clears it within a tick.
+function AutoModeBanner() {
+  const [isAuto, setIsAuto] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const check = async () => {
+      try {
+        const api = await import("@/lib/api");
+        const s = await api.getTradingMode();
+        if (!alive) return;
+        setIsAuto(s.mode === "auto");
+      } catch {
+        // If we can't reach the backend, fail closed (assume not auto).
+        if (alive) setIsAuto(false);
+      }
+    };
+    void check();
+    const id = setInterval(check, 60_000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
+
+  if (!isAuto) return null;
+
+  return (
+    <div className="rounded-xl border-2 border-bear bg-bear/20 px-4 py-3 flex items-center gap-3 shadow-[0_0_0_2px_hsl(var(--bear)/0.4)]">
+      <ShieldAlert className="h-5 w-5 text-bear shrink-0 animate-pulse" />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-bold text-bear uppercase tracking-wider">
+          ⚠ AUTO TRADING ACTIVE · REAL MONEY FLOWING
+        </div>
+        <div className="text-xs text-foreground/85 mt-0.5 leading-relaxed">
+          The bot is placing live Robinhood orders <span className="font-semibold">without manual approval</span>.
+          Switch to PAUSED below to stop new trades immediately. Caps and existing safety gates still apply.
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // Small icon button — visible only in admin builds. Calls /admin/logout

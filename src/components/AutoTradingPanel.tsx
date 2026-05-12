@@ -160,20 +160,44 @@ export default function AutoTradingPanel() {
     async (mode: TradingMode) => {
       if (!status || mode === status.mode) return;
 
-      // Confirm any non-pause transition. Going UP in trading capability
-      // (paused → assisted) gets a softer confirm; auto is rejected by API.
-      const confirmText =
-        mode === "paused"
-          ? `PAUSE the bot?\n\nThe bot will stop evaluating new trades. ` +
-            `Manual approval still works. Existing live positions are unaffected.`
-          : mode === "assisted"
-          ? `Enable ASSISTED trading?\n\n` +
-            `The bot will evaluate scans and propose live trades. ` +
-            `Each proposed trade requires your manual approval before placement.\n\n` +
-            `Daily caps still apply ($10/order, $10 daily loss, ETH-USD only).\n\n` +
-            `Proceed?`
-          : `Switch to ${mode}?`;
-      if (!window.confirm(confirmText)) return;
+      // AUTO requires a typed phrase, not just an OK click. Belt-and-
+      // suspenders gate: even though the backend re-checks env ceilings,
+      // we make the UI side meaningful.
+      if (mode === "auto") {
+        const typed = window.prompt(
+          "⚠ ENABLE FULL AUTO TRADING\n\n" +
+            "The bot will place real Robinhood orders WITHOUT your approval.\n\n" +
+            "Caps still apply ($10/order, $10 daily loss, 5 trades/day, ETH-USD only).\n" +
+            "There is no automatic stop-loss enforcement on open positions.\n" +
+            "Trades can fire 24/7 including while you sleep.\n\n" +
+            "Type EXACTLY: ENABLE AUTO TRADING\n\n" +
+            "to confirm:",
+          "",
+        );
+        if (typed !== "ENABLE AUTO TRADING") {
+          if (typed !== null) {
+            toast({
+              title: "Auto trading not enabled",
+              description: "Confirmation phrase did not match. No change made.",
+              variant: "destructive",
+            });
+          }
+          return;
+        }
+      } else {
+        const confirmText =
+          mode === "paused"
+            ? `PAUSE the bot?\n\nThe bot will stop evaluating new trades. ` +
+              `Manual approval still works. Existing live positions are unaffected.`
+            : mode === "assisted"
+            ? `Enable ASSISTED trading?\n\n` +
+              `The bot will evaluate scans and propose live trades. ` +
+              `Each proposed trade requires your manual approval before placement.\n\n` +
+              `Daily caps still apply ($10/order, $10 daily loss, ETH-USD only).\n\n` +
+              `Proceed?`
+            : `Switch to ${mode}?`;
+        if (!window.confirm(confirmText)) return;
+      }
 
       setBusy(true);
       try {
